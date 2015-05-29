@@ -494,6 +494,23 @@ struct
       | Arrow ((v1,t1),t2) => Arrow ((v1,mapBaseTy t1 f), 
           mapBaseTy t2 f)
 
+    (*
+     * This function handles tuples incorrectly.
+     *)
+    fun mapNegBaseTy t f = case t of
+        Arrow ((v,t1 as Arrow _),t2) => Arrow ((v,mapPosBaseTy t1 f),
+                                mapNegBaseTy t2 f)
+      | Arrow ((v,t1),t2) => Arrow ((v,mapPosBaseTy t1 f), 
+                                mapNegBaseTy t2 f)
+      | _ => t
+    and mapPosBaseTy t f = case t of
+        Base (v,t,p) => Base $ f (v,t,p)
+      | Tuple tv => Tuple $ Vector.map (tv,fn (v,t) => 
+          (v,mapPosBaseTy t f))
+      | Arrow ((v,t1 as Arrow _),t2) => Arrow ((v,mapNegBaseTy t1 f),
+                                mapPosBaseTy t2 f)
+      | Arrow (vt1,t2) => Arrow (vt1, mapPosBaseTy t2 f)
+
     fun mapTyD t f = mapBaseTy t (fn (v,t,p) => (v,f t,p)) 
       
     fun applySubsts substs refty = 

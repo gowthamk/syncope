@@ -23,7 +23,7 @@ struct
 
   datatype simple_pred = True
                        | False
-                       | Hole of Hole.t
+                       | Hole of Hole.t*VE.t
                        | Base of BP.t 
                        | Rel of RP.t
 
@@ -44,6 +44,13 @@ struct
   fun vectorPrepend (e,vec) = Vector.concat [Vector.new1 e,vec]
   fun vectorFoldrFoldr (vec1,vec2,acc,f) = Vector.foldr (vec1,acc,
     fn (el1,acc) => Vector.foldr (vec2,acc,fn (el2,acc) => f (el1,el2,acc)))
+  (*
+   * A hack to associate a hole in a VC with corresponding VE.
+   * Updated each time fromTypeCheck is called.
+   * Used by coercePTtoT.
+   *)
+  val curVE = ref $ VE.empty
+  
 
   fun conj (p1 : vc_pred,p2 : vc_pred) : vc_pred = case (p1,p2) of 
       (Simple True,_) => p2
@@ -74,7 +81,7 @@ struct
   fun coercePTtoT (pt:P.t) : vc_pred = case pt of
       P.True => Simple True
     | P.False => Simple False
-    | P.Hole h => Simple $ Hole h
+    | P.Hole h => Simple $ Hole (h,!curVE)
     | P.Base p => Simple $ Base p
     | P.Rel p => Simple $ Rel p
     | P.Not p => negate $ coercePTtoT p
@@ -215,6 +222,13 @@ struct
   fun fromTypeCheck (ve, subTy, supTy) : t vector = 
     let
       open RefTy
+      val _ = curVE := ve
+      val _ = print "\n"
+      val subTyLyt = RefTy.layout subTy
+      val supTyLyt = RefTy.layout supTy
+      val lyt = L.seq [subTyLyt, L.str " <: ", supTyLyt]
+      val _ = L.print (lyt,print)
+      val _ = print "\n"
     in
       case (subTy,supTy) of
         (Base (_,TyD.Tunknown,p),_) => if P.isFalse p 
@@ -276,6 +290,7 @@ struct
           in
             Vector.concat [vcs1, vcs2]
           end
+      | _ => raise TrivialVC
     end handle TrivialVC => Vector.new0 ()
 
   datatype rinst = RInst of RelLang.RelId.t * TypeDesc.t vector
@@ -422,7 +437,7 @@ struct
               (relvid,(domTyD,sort))
             end)
 
-      fun elabIfHole (Hole (P.Hole.T {substs,bv,id=holeId,env})) : vc_pred = 
+      fun elabIfHole (Hole (P.Hole.T {substs,bv,id=holeId,env},_)) : vc_pred = 
           let
             val bvTyD = TyDBinds.find env bv
             fun sortEq (t1,t2) = RelTy.equal (RelTy.Tuple $
@@ -503,7 +518,7 @@ struct
       fun laytSimplePred sp = case sp of 
           True => L.str "true"
         | False => L.str "false"
-        | Hole h => L.str $ Hole.toString h
+        | Hole (h,_) => L.str $ "{"^(Hole.toString h)^",VE}"
         | Base bp => L.str $ BP.toString bp
         | Rel rp => L.str $ RP.toString rp
 

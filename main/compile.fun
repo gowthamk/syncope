@@ -129,13 +129,13 @@ val (z3_log,z3_log_close) = (fn stream =>
    fn () => Out.close stream)) 
    (Out.openOut "catalyst.z3")
 
-(*
 structure VCE = VCEncode (structure VC = VC
                           val z3_log = z3_log)
-*)
+(*
 structure VCS = VCSolve (structure VC = VC
                          val z3_log = z3_log)
 structure HM = VCS.HoleMap
+*)
 
 
 (* ------------------------------------------------- *)
@@ -580,6 +580,23 @@ in
               VC.layouts (vcs,output))
             val _ = Control.saveToFile ({suffix = "vcs"}, No, vcs,
                                       Layouts layouts)
+            (*
+             * VC solving
+             *)
+            (*
+            val holeMap = Control.pass 
+              {
+                display = Control.NoDisplay,
+                name = "Solve VC Constraints",
+                stats = fn _ => Layout.empty,
+                style = Control.ML,
+                suffix = "vcsolve",
+                thunk = (fn () => VCS.solve (re,vcs))
+              }
+            val _ = Control.saveToFile ({suffix = "hm"}, No, holeMap,
+                                      Layout HM.layout)
+            *)
+            (*
             val elabvcs = Control.pass 
               {
                 display = Control.NoDisplay,
@@ -591,22 +608,7 @@ in
               }
             val _ = Control.saveToFile ({suffix = "evcs"}, No, elabvcs,
                                       Layouts VC.layouts)
-            (*
-             * VC solving
-             *)
-            val holeMap = Control.pass 
-              {
-                display = Control.NoDisplay,
-                name = "Solve VC Constraints",
-                stats = fn _ => Layout.empty,
-                style = Control.ML,
-                suffix = "vcsolve",
-                thunk = (fn () => VCS.solve elabvcs)
-              }
-            val _ = Control.saveToFile ({suffix = "hm"}, No, holeMap,
-                                      Layout HM.layout)
             
-            (*
             exception CantDischargeVC
             fun dischargeVC (i,vc) = case VCE.discharge vc of
                 VCE.Success => print ("VC# "^(Int.toString i)^" discharged\n")
@@ -615,9 +617,9 @@ in
                   z3_log_close ();
                   raise CantDischargeVC)
               | VCE.Failure => (print ("VC # " ^(Int.toString i)^
-                " is invalid!"); 
+                " is invalid!\n")(*; 
                   z3_log_close ();
-                  raise CantDischargeVC)
+                  raise CantDischargeVC*))
             val _ = Control.pass 
               {
                 display = Control.NoDisplay,

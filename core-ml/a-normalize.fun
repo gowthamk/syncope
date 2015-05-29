@@ -452,18 +452,30 @@ struct
       val expty = C.Exp.ty exp
       val expnode = C.Exp.node exp
       open A
+      exception Return
     in
       case expnode of
-          C.Exp.App (e1,e2) => 
-          let
-            val (fdecs, f) = doItExpToVar e1 tyvars
-            val Exp.Val.Atom fvar = varToExpVal (f,tyvarvToTyv tyvars)
-            val ftyargv = tyvarvToTyv tyvars
-            val (argdecs,argval) = doItExpToValue e2 tyvars
-            val expnode = Exp.App (fvar, argval)
-          in
-            (List.concat [fdecs,argdecs], Exp.make (expnode,expty))
-          end
+          C.Exp.App (e1,e2) => ((case (C.Exp.node e1,C.Exp.node e2) of
+              (C.Exp.Var (varTh,tyTh), C.Exp.Record r) => 
+                let
+                  val fname = Var.toString $ varTh ()
+                  val _ = if String.hasPrefix (fname,{prefix="hole_f"})
+                            then () else raise Return 
+                  val holeExp = A.Exp.make (A.Exp.newHole (), expty) 
+                in
+                  ([],holeExp)
+                end
+            | _ => raise Return) 
+          handle Return =>
+            let
+              val (fdecs, f) = doItExpToVar e1 tyvars
+              val Exp.Val.Atom fvar = varToExpVal (f,tyvarvToTyv tyvars)
+              val ftyargv = tyvarvToTyv tyvars
+              val (argdecs,argval) = doItExpToValue e2 tyvars
+              val expnode = Exp.App (fvar, argval)
+            in
+              (List.concat [fdecs,argdecs], Exp.make (expnode,expty))
+            end)
         | C.Exp.Case {kind, lay, nest, noMatch, rules, test, ...} =>
           (*
            * A correct elaboration of case-match statement should be done in

@@ -15,6 +15,7 @@ local
    ../speclang/sources.mlb
    ../core-ml/sources.mlb
    ../specelab/sources.mlb
+   ../synthesize/sources.mlb
    vc.sig
    vc.fun
    specverify.sig

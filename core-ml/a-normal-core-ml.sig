@@ -102,11 +102,13 @@ signature A_NORMAL_CORE_ML =
              | Nop
              | Seq of t vector 
              | Value of Val.t
+             | Hole of {id:string}
             val dest: t -> node * Type.t
             val layout: t -> Layout.t
             val layoutWithType: t -> Layout.t
             val make: node * Type.t -> t
             val node: t -> node
+            val newHole : unit -> node
             val ty: t -> Type.t
          end
 

@@ -15,6 +15,9 @@ struct
   structure BP = Predicate.BasePredicate
   structure RP = Predicate.RelPredicate
   structure L = Layout
+  structure Synth = Synthesize (structure VE = VE
+                                structure ANormalCoreML = ANormalCoreML
+                                structure SpecLang = SpecLang)
 
   type subst = Var.t*Var.t
   type substs = subst Vector.t
@@ -209,7 +212,7 @@ struct
        *val _ = print "\n"
        *)
     in
-      RefTy.mapBaseTy ty (fn (v,td,pred) => (v,td,
+      RefTy.mapPosBaseTy ty (fn (v,td,pred) => (v,td,
         Predicate.exists (tyDB,Predicate.conj(pred1,pred))))
     end
 
@@ -232,6 +235,7 @@ struct
           (Vector.new1 (v,argTy), Vector.new1 (v,argv))
       | (RefTy.Base _,Atom (Const c)) => Error.bug $ 
           "Unimpl const args"
+      | (RefTy.Base _,_) => (Vector.new0 (), Vector.new0 ())
       | (RefTy.Tuple argBinds',Tuple atomvec) => 
           (*
            * Unifies v:{1:T0,2:T1} with (v0,v1)
@@ -299,7 +303,9 @@ struct
           end
       | (RefTy.Arrow _, Atom (Var (v,_))) => (Vector.new1 (v,argTy), 
           Vector.new1 (v,argv))
-      | _ => raise Fail $ "Invalid argTy-argExpVal pair encountered"
+      | _ => raise Fail $ "Invalid argTy-argExpVal pair encountered: \n"
+            ^(L.toString $ RefTy.layout argTy)^"\n"
+            ^(L.toString $ Exp.Val.layout argExpVal)^"\n"
     end
 
     fun unifyWithDisj (refTy1 : RefTy.t,refTy2 : RefTy.t) : RefTy.t =
@@ -501,6 +507,38 @@ struct
   and typeCheckExp (ve : VE.t, exp: Exp.t, ty: RefTy.t) : VC.t vector =
     case Exp.node exp of
       Exp.Lambda l => typeCheckLambda (ve,l,ty)
+    | Exp.Case {test:Exp.Val.t,rules,...} => 
+          let
+            val vcs = Vector.fold (rules, Vector.new0(), 
+              fn ({pat,exp,...},vcs) =>
+              let
+                val valbind = Dec.PatBind (pat,test)
+                (* 
+                 * tyvars used, if any, for type instantiations inside
+                 * test are bound at any of the enclosing valbinds. Therefore,
+                 * passing empty for tyvars is sound.
+                 *)
+                val (vcs1,extendedVE) = doItValBind (ve,
+                  Vector.new0(),valbind)
+                val vcs2 = typeCheckExp (extendedVE,exp,ty)
+              in
+                Vector.concat [vcs, vcs1, vcs2]
+              end)
+          in
+            vcs
+          end
+    | Exp.Hole {id} => 
+      let
+        val _ = print $ "---- Hole("^id^") ----\n"
+        val _ = print "Var Env:\n"
+        val _ = Control.message (Control.Top, fn _ =>
+          VE.layout ve)
+        val _ = print "Hole ty:\n"
+        val _ = Control.message (Control.Top, fn _ =>
+          RefTy.layout ty)
+      in
+        typeCheckExp (ve, Synth.doIt (ve,exp,ty), ty)
+      end
     | _ => 
       let
         (*

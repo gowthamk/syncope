@@ -379,10 +379,28 @@ struct
 
 
   (*
-   * Forall top-level fun decs, elabDecs annotates their ML
+   * Forall fun decs, elabDecs annotates their ML
    * types with type refinements 
    *)
-  fun elabDecs (ve :VE.t, decs : Dec.t vector) : VE.t =
+
+  fun elabDecsInLambda (ve : VE.t, lam:Lambda.t) = 
+    let
+      val {body, ...} = Lambda.dest lam
+    in
+      elabDecsInExpr (ve,body)
+    end
+
+  and elabDecsInExpr (ve,exp) = case Exp.node exp of
+      Exp.Lambda l => elabDecsInLambda (ve,l)
+    | Exp.Case {rules, ...} => Vector.fold (rules,ve,
+        fn ({exp, ...},ve) => elabDecsInExpr (ve,exp))
+    | Exp.Let (decs,subExp) => elabDecsInExpr 
+                            (elabDecs(ve,decs),subExp)
+    | Exp.Seq exps => Vector.fold (exps,ve, 
+                        fn (exp,ve) => elabDecsInExpr (ve,exp))
+    | _ => ve
+
+  and elabDecs (ve :VE.t, decs : Dec.t vector) : VE.t =
     let
       fun elabRecDecs (ve : VE.t) (tyvars : Tyvar.t vector)  decs = 
         Vector.fold (decs,ve, fn ({lambda : Lambda.t, var : Var.t}, ve) =>
@@ -398,8 +416,9 @@ struct
               RefTyS.specialize funTyS) 
             val funspec = RefTyS.generalizeAssump (tyvars,funRefTy,
               RefTyS.isAssumption funTyS)
+            val ve' = VE.add (VE.remove ve var) (var,funspec)
           in
-            VE.add (VE.remove ve var) (var,funspec)
+            elabDecsInExpr (ve',body)
           end)
 
       fun elabDec (ve : VE.t, dec : Dec.t) : VE.t = 

@@ -145,6 +145,7 @@ and expNode =
  | Nop 
  | Seq of exp vector
  | Value of exp_val_t
+ | Hole of {id:string}
 
 and lambda = Lam of {arg: Var.t,
                      argType: Type.t,
@@ -235,7 +236,8 @@ in
        (*| Raise v => Pretty.raisee (exp_val_layt v)*)
        | Nop => str "Nop"
        | Seq es => Pretty.seq (Vector.map (es, layoutExp))
-        | Value v => exp_val_layt v
+       | Value v => exp_val_layt v
+       | Hole {id} => str ("e??"^id)
 
    and layoutFuns (tyvars, decs)  =
       if 0 = Vector.length decs
@@ -307,6 +309,10 @@ structure Exp =
 
       fun make (n, t) = Exp {node = n,
                              ty = t}
+      val count = ref 0
+      fun newHoleId () = (count := (!count) + 1; 
+                          Int.toString (!count))
+      fun newHole () = Hole {id=newHoleId ()}
    end
 
 structure Dec =

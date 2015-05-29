@@ -175,6 +175,8 @@ sig
     val alphaRenameToVar : t -> Var.t -> t
     val mapBaseTy : t -> ((Var.t * TypeDesc.t * Predicate.t) -> 
           (Var.t * TypeDesc.t * Predicate.t)) -> t
+    val mapPosBaseTy : t -> ((Var.t * TypeDesc.t * Predicate.t) -> 
+          (Var.t * TypeDesc.t * Predicate.t)) -> t
     val mapTyD : t -> (TypeDesc.t -> TypeDesc.t) -> t
     val exnTyp : unit -> t
     (* pre-condition: input t must be a Tuple _ *)
