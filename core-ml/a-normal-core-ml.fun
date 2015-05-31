@@ -5,6 +5,9 @@ open S
 
 structure Field = Record.Field
 
+fun $ (f,arg) = f arg
+infixr 5 $
+
 fun maybeConstrain (x, t) =
    let
       open Layout
@@ -47,7 +50,9 @@ structure Pat =
                 Atom (Const c) => Const.layout c
               | Atom (Var v) => Var.layout v
               | Atom (Wild) => str "_"
-              | Tuple av => tuple (Vector.toListMap (av, fn v => layout (Atom v)))
+              | Tuple av => seq $ separate (Vector.toListMap (av, 
+                                              fn v => layout (Atom v)), 
+                                            ",")
               | Record r => record (Vector.toListMap (Record.toVector r, fn (f, p) =>
                              (Field.toString f, layout (Atom p))))
             end
@@ -146,6 +151,8 @@ and expNode =
  | Seq of exp vector
  | Value of exp_val_t
  | Hole of {id:string}
+ | VarChoice of Var.t vector
+ | AppChoice of exp vector
 
 and lambda = Lam of {arg: Var.t,
                      argType: Type.t,
@@ -208,7 +215,7 @@ in
                             | ExpBind (patval,exp) => seq [str "val",
                                 mayAlign [seq [layoutTyvars (tyvars ()),
                                                str " ", Pat.Val.layout patval,
-                                               str " =."],
+                                               str " = "],
                                           layoutExp exp]]))]
    and layoutExp (Exp {node, ...}) =
       case node of
@@ -237,7 +244,16 @@ in
        | Nop => str "Nop"
        | Seq es => Pretty.seq (Vector.map (es, layoutExp))
        | Value v => exp_val_layt v
-       | Hole {id} => str ("e??"^id)
+       | Hole {id} => str ("e"^id^"??")
+       | VarChoice vars => seq $ 
+                    List.concat [(str "Choose [ ") :: 
+                                 (separate (Vector.toListMap (vars, 
+                                                  Var.layout), ",")),
+                                 [str " ]"]]
+       | AppChoice exps => seq [str "Choose [ ",
+                                align $ separateRight (Vector.toListMap 
+                                            (exps,layoutExp),","),
+                                str " ]"]
 
    and layoutFuns (tyvars, decs)  =
       if 0 = Vector.length decs
@@ -313,6 +329,11 @@ structure Exp =
       fun newHoleId () = (count := (!count) + 1; 
                           Int.toString (!count))
       fun newHole () = Hole {id=newHoleId ()}
+
+      fun isAppChoice (AppChoice _) = true
+        | isAppChoice _ = false
+
+      val isAppChoice = fn e => isAppChoice (node e)
    end
 
 structure Dec =

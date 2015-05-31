@@ -22,6 +22,7 @@ signature A_NORMAL_CORE_ML_STRUCTS =
             val unit: t
             val var : Tyvar.t -> t
             val toMyType : t -> TypeDesc.t
+            val fromMyType : TypeDesc.t -> t
             val renameTyVars : (Tyvar.t * Tyvar.t) vector -> t -> t
          end
    end
@@ -103,12 +104,15 @@ signature A_NORMAL_CORE_ML =
              | Seq of t vector 
              | Value of Val.t
              | Hole of {id:string}
+             | VarChoice of Var.t vector
+             | AppChoice of t vector
             val dest: t -> node * Type.t
             val layout: t -> Layout.t
             val layoutWithType: t -> Layout.t
             val make: node * Type.t -> t
             val node: t -> node
             val newHole : unit -> node
+            val isAppChoice : t -> bool
             val ty: t -> Type.t
          end
 

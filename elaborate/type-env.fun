@@ -866,7 +866,21 @@ structure Type =
             print (Layout.toString (layout t'));
             print "\n";
             TypeDesc.makeTunknown())
-
+      (*
+       * Function to convert a TyD.t back to Type.t
+       *)
+      fun fromMyType (TypeDesc.Tconstr (c,targs)) = 
+                    con (c,Vector.fromListMap (targs, fromMyType))
+        | fromMyType (TypeDesc.Tvar tyv) = var tyv
+        | fromMyType (TypeDesc.Tarrow (tyd1,tyd2)) = 
+                    arrow (fromMyType tyd1, fromMyType tyd2)
+        | fromMyType (TypeDesc.Trecord r) = 
+                  (* Fix: All records being incorrectly 
+                     mapped to tuples *)
+                  tuple (Vector.map (Record.toVector r, 
+                            fromMyType o #2))
+        | fromMyType (TypeDesc.Tunknown) =
+                    Error.bug "fromMyType: Tunknown encountered\n"
       (* Add a function to rename tyvars in type *)
       (* Author : GK *)
       fun renameTyVars (substs : (Tyvar.t * Tyvar.t) vector) ty =

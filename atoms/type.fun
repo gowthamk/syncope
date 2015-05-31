@@ -67,6 +67,44 @@ functor TypeDesc (S: TYPE_DESC_STRUCTS): TYPE_DESC =
         (Tunknown,_) => false
       | (_,Tunknown) => true
       | _ => true
+    (*
+     * Generates a substitution S s.t S(t1) = t2.
+     *)
+    exception CantUnify
+    fun unify (t1,t2) =
+      let
+        val substs = case (t1,t2) of 
+          (Tvar v1, Tvar v2) => if Tyvar.equals (v1,v2) 
+                then Vector.new0 () else Vector.new1 (t2,v1)
+        | (Tvar v,_) => Vector.new1 (t2,v)
+        | (Tconstr (tycon1,targs1), Tconstr (tycon2,targs2)) => 
+            let
+              val _ = if Tycon.equals (tycon1,tycon2) then ()
+                  else raise CantUnify
+              val _ = if List.length targs1 = List.length targs2 
+                  then () else raise CantUnify
+              val substs = Vector.concat (List.map2 (targs1,targs2,
+                unify))
+            in
+              substs
+            end
+        | _ => raise CantUnify
+      in
+        substs
+      end 
+
+    val unify = fn (t1,t2) => SOME (unify (t1,t2)) 
+                                handle CantUnify => NONE
+
+    fun resTyDOf (Tarrow (_,t2)) = resTyDOf t2
+      | resTyDOf t = t
+
+    fun argTyDsOf (Tarrow (t1,t2 as Tarrow _)) = 
+            t1 :: (argTyDsOf t2)
+      | argTyDsOf (Tarrow (t1,t2)) = [t1]
+      | argTyDsOf _ = Error.bug "argTyDsOf: non-arrow type given\n"
+
+    val argTyDsOf = Vector.fromList o argTyDsOf
 
     fun substTyvar ((tyd,tyvar),ty) = 
       let
