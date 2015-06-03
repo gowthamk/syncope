@@ -1,4 +1,4 @@
-functor Synthesize (S : SYNTHESIZE_STRUCTS) : SYNTHESIZE = 
+functor HoleRewrite (S : HOLE_REWRITE_STRUCTS) : HOLE_REWRITE = 
 struct
   open S
   open SpecLang
@@ -141,7 +141,7 @@ struct
        andalso (not $ !hasHole))
     end
 
-  fun doIt (ve,holeExp,refTy) =
+  fun newContext (ve,holeExp,refTy) =
     let
       exception Return
 
@@ -287,11 +287,6 @@ struct
               | _ => SOME $ mkAppSketch (instFExp, fTyD)
           end handle Return => NONE)
 
-      exception CantSolveSketch
-      exception SketchSolved of Exp.t
-      fun solveSketch (sketch, refTy) : Exp.t =
-        raise (Fail "Unimpl.")
-
       fun mkAppChoiceExp holeExp = mapHoles (holeExp,
         fn hole =>
           let
@@ -402,35 +397,16 @@ struct
           val t2s = t2sOfHoleExp (holeIds, holeExp)
           val t2exps = List.map (t2s, fn (T2 (e,_)) => e)
           val choiceExps = List.map (t2exps, mkAppChoiceExp)
-          val _ = print "---- Choice Exps ----\n"
-          val _ = L.print (List.layout Exp.layout choiceExps, print)
+          (*val _ = print "---- Choice Exps ----\n"
+          val _ = L.print (List.layout Exp.layout choiceExps, print) *)
           val flatExps = List.concat $ List.map (choiceExps, 
               fn choiceExp => case expandChoiceInExp choiceExp of   
                   Choose flatExps => flatExps)
           val _ = print "---- Flat Exps ----\n"
           val _ = L.print (List.layout Exp.layout flatExps, print)
         in
-          raise (Fail "Unimpl.")
+          flatExps
         end
-
-      fun bfsSolve (holeExp::rest, refTy) =
-        let
-          val holeIds = allHoleIdsInExpr holeExp
-          val exp =  if List.length holeIds = 0 
-              (* then, this is a leaf node *)
-              then solveSketch (holeExp, refTy) 
-                      handle CantSolveSketch => bfsSolve (rest, refTy)
-              else if List.length holeIds > 10
-                   (* Artificial limit to keep the search tractable *)
-                   then bfsSolve (rest, refTy)
-                   else bfsSolve (List.concat [rest, 
-                                               allChildren (holeIds, 
-                                                            holeExp)], 
-                                  refTy)
-        in
-          exp
-        end 
-        | bfsSolve ([],refTy) = raise (Fail "Can't solve the sketch!\n")
 
       val holeTy = Exp.ty holeExp
       val newV = genVar ()
@@ -438,7 +414,43 @@ struct
       val newVExp = newVarExp (newV,holeTy)
       val letExpNode = Exp.Let (Vector.new1 newVDec, newVExp)
       val letExp = Exp.make (letExpNode, holeTy)
+      (*
+       * Breadth-First Search worklist is initially the hole
+       * expression in `let` form.
+       *)
+      val bfsWorkList = ref [letExp]
+      (*
+       * Breadth-First Search Logic
+       *)
+      fun bfsForCandidate ((* worklist as *)holeExp::rest) 
+            : Exp.t(* candidate *) * Exp.t list(* restWorklist*) =
+        let
+          val holeIds = allHoleIdsInExpr holeExp
+          val res =  if List.length holeIds = 0 
+              (* then, this is a leaf node. We have found a candidate. *)
+              then (holeExp, rest)
+              else if List.length holeIds > 10
+                   (* Artificial limit to keep the search tractable *)
+                   then bfsForCandidate (rest)
+                   else bfsForCandidate (List.concat [rest, 
+                                               allChildren (holeIds, 
+                                                            holeExp)])
+        in
+          res
+        end 
+        | bfsForCandidate ([]) = 
+                raise (Fail "BFS can't find a candidate!\n")
+
+      fun newCandidate () = 
+        let
+          val (cand,restWorklist) = bfsForCandidate (!bfsWorkList)
+          val _ = bfsWorkList := restWorklist
+        in
+          cand
+        end
     in
-      bfsSolve ([letExp], refTy)
+      {
+        newCandidate = newCandidate
+      }
     end 
 end

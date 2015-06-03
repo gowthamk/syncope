@@ -15,9 +15,13 @@ struct
   structure BP = Predicate.BasePredicate
   structure RP = Predicate.RelPredicate
   structure L = Layout
-  structure Synth = Synthesize (structure VE = VE
+  structure Rewr = HoleRewrite (structure VE = VE
                                 structure ANormalCoreML = ANormalCoreML
                                 structure SpecLang = SpecLang)
+  structure TyConstraintGen = TyConstraintGen (structure VE = VE
+                                               structure ANormalCoreML
+                                                   = ANormalCoreML)
+  structure TyCst = TyConstraintGen.TyCst
 
   type subst = Var.t*Var.t
   type substs = subst Vector.t
@@ -533,11 +537,18 @@ struct
         val _ = print "Var Env:\n"
         val _ = Control.message (Control.Top, fn _ =>
           VE.layout ve)
-        val _ = print "Hole ty:\n"
+        val rc = Rewr.newContext (ve,exp,ty)
+        val newCandidate = #newCandidate rc
+        val cand = newCandidate ()
+        val _ = print "\nCandidate:\n"
         val _ = Control.message (Control.Top, fn _ =>
-          RefTy.layout ty)
+          Exp.layout cand)
+        val tycst = TyConstraintGen.doIt (ve, cand, ty)
+        val _ = print "Type Constraints:\n"
+        val _ = Control.message (Control.Top, fn _ =>
+          TyCst.layout tycst)
       in
-        typeCheckExp (ve, Synth.doIt (ve,exp,ty), ty)
+        raise (Fail "Unimpl.")
       end
     | _ => 
       let
@@ -553,7 +564,7 @@ struct
         Vector.concat [expvcs,newvcs]
       end
 
-  and doItValBind (ve,tyvars,valbind) : (VC.t vector * VE.t) = 
+    and doItValBind (ve,tyvars,valbind) : (VC.t vector * VE.t) = 
     case valbind of
       Dec.ExpBind (patval,exp) =>
         let

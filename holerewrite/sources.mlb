@@ -7,9 +7,9 @@ local
    ../speclang/sources.mlb
    ../core-ml/sources.mlb
    ../specelab/sources.mlb
-   synthesize.sig
-   synthesize.fun
+   holerewrite.sig
+   holerewrite.fun
 in
-  signature SYNTHESIZE
-  functor Synthesize
+  signature HOLE_REWRITE
+  functor HoleRewrite
 end

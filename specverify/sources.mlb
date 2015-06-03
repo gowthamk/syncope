@@ -15,9 +15,13 @@ local
    ../speclang/sources.mlb
    ../core-ml/sources.mlb
    ../specelab/sources.mlb
-   ../synthesize/sources.mlb
+   ../holerewrite/sources.mlb
+   tycst.sig
+   tycst.fun
    vc.sig
    vc.fun
+   tyconstraintgen.sig
+   tyconstraintgen.fun
    specverify.sig
    specverify.fun
 in

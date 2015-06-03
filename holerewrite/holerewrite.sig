@@ -1,4 +1,4 @@
-signature SYNTHESIZE_STRUCTS =
+signature HOLE_REWRITE_STRUCTS =
 sig
   structure VE : VAR_ENV
   structure ANormalCoreML : A_NORMAL_CORE_ML
@@ -8,13 +8,15 @@ sig
   sharing SpecLang.Tyvar = ANormalCoreML.Tyvar
   sharing VE.Var = ANormalCoreML.Var
 end
-signature SYNTHESIZE =
+signature HOLE_REWRITE =
 sig
-  include SYNTHESIZE_STRUCTS
+  include HOLE_REWRITE_STRUCTS
 
   (*
    * Γ ⊢ e??:τ ↪ e
    *)
-  val doIt : VE.t * ANormalCoreML.Exp.t * SpecLang.RefinementType.t 
-              -> ANormalCoreML.Exp.t
+  val newContext : VE.t * ANormalCoreML.Exp.t * SpecLang.RefinementType.t -> 
+    {
+      newCandidate : unit -> ANormalCoreML.Exp.t
+    }
 end
