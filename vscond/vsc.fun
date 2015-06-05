@@ -463,9 +463,14 @@ struct
             [envSC] => envSC
           | _ => raise (Fail "SC.fromTyCst: Hole dominated by \
                   \ a case expression. Synthesis Unimpl.")
-        val tycstSC = case Vector.toList $ havocVE tycst of
+        val (scbinds,scpred) = case Vector.toList $ havocVE tycst of
             [tycstSC] => tycstSC
           | _ => raise (Fail "SC.fromTyCst: impossible case\n")
+        (* scbinds can contain dupes. Remove them *)
+        val scbinds' = Vector.removeDuplicates (scbinds,
+            fn ((v1,tyd1),(v2,tyd2)) => varStrEq (v1,v2) andalso
+                                        TyD.sameType (tyd1,tyd2))
+        val tycstSC = (scbinds',scpred)
       in
         T $ joinVCs (envSC,tycstSC)
       end

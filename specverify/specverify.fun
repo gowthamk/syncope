@@ -71,10 +71,23 @@ struct
       | _ => p
     end
 
-  fun simplifyVE ve =
+  (*
+   * Normal form of VE does not contain variable equalties. We also
+   * remove meta-variable bindings as an optimization.
+   * The function returns normal form of VE along with the
+   * substitutions made to attain normal form.
+   *)
+  fun normalizeVE ve =
     let
       exception Continue
-      fun elimVarEqs binds [] = binds
+      val metaVarSymBases = ["sv_", "_mark_", "hole_f"]
+      val isMetaVar = fn v => 
+        (fn vStr => List.exists (metaVarSymBases, 
+            fn symBase => String.hasPrefix (vStr,{prefix=symBase}))) 
+        (Var.toString v)
+      fun elimMetaVarBinds binds = List.keepAll (binds,
+        fn (v,_) => not $ isMetaVar v)
+      fun elimVarEqs binds [] = ([], binds)
         | elimVarEqs binds1 ((v,refTyS)::binds2) =
           let
             val RefTyS.T {refty, ...} = refTyS
@@ -93,16 +106,17 @@ struct
                    RefTyS.applySubsts v1v2s refTyS))
             val binds1' = applySubstInBinds binds1
             val binds2' = applySubstInBinds binds2
+            val (substs,normalBinds) = elimVarEqs binds1' binds2'
           in
-            elimVarEqs binds1' binds2'
+            ((v1,v2)::substs, normalBinds)
           end handle Continue => 
                 elimVarEqs ((v,refTyS)::binds1) binds2
       val refTyBinds = Vector.toList $ VE.toVector ve
-      val refTyBinds' = elimVarEqs [] refTyBinds
-      val ve' = List.fold (refTyBinds', VE.empty,
+      val (substs,normalBinds) = elimVarEqs [] $ elimMetaVarBinds refTyBinds
+      val normalVE = List.fold (normalBinds, VE.empty,
           fn (bind,ve) => VE.add ve bind)
     in
-      ve'
+      (Vector.fromList substs, normalVE)
     end
   (*
    * Produces a refTy' with base types taken from TyD and
@@ -585,8 +599,9 @@ struct
     | Exp.Hole {id} => 
       let
         val _ = print $ "---- Hole("^id^") ----\n"
-        val ve = simplifyVE ve
-        val _ = print "Simplified Var Env:\n"
+        val (substs,ve) = normalizeVE ve
+        val ty = RefTy.applySubsts substs ty
+        val _ = print "Normalized Var Env:\n"
         val _ = Control.message (Control.Top, fn _ =>
           VE.layout ve)
         val rc = Rewr.newContext (ve,exp,ty)
