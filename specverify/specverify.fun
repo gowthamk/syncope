@@ -72,21 +72,13 @@ struct
     end
 
   (*
-   * Normal form of VE does not contain variable equalties. We also
-   * remove meta-variable bindings as an optimization.
    * The function returns normal form of VE along with the
    * substitutions made to attain normal form.
+   * Normal form of VE does not contain variable equalties. 
    *)
   fun normalizeVE ve =
     let
       exception Continue
-      val metaVarSymBases = ["sv_", "_mark_", "hole_f"]
-      val isMetaVar = fn v => 
-        (fn vStr => List.exists (metaVarSymBases, 
-            fn symBase => String.hasPrefix (vStr,{prefix=symBase}))) 
-        (Var.toString v)
-      fun elimMetaVarBinds binds = List.keepAll (binds,
-        fn (v,_) => not $ isMetaVar v)
       fun elimVarEqs binds [] = ([], binds)
         | elimVarEqs binds1 ((v,refTyS)::binds2) =
           let
@@ -112,7 +104,7 @@ struct
           end handle Continue => 
                 elimVarEqs ((v,refTyS)::binds1) binds2
       val refTyBinds = Vector.toList $ VE.toVector ve
-      val (substs,normalBinds) = elimVarEqs [] $ elimMetaVarBinds refTyBinds
+      val (substs,normalBinds) = elimVarEqs [] refTyBinds
       val normalVE = List.fold (normalBinds, VE.empty,
           fn (bind,ve) => VE.add ve bind)
     in
@@ -599,6 +591,9 @@ struct
     | Exp.Hole {id} => 
       let
         val _ = print $ "---- Hole("^id^") ----\n"
+        val _ = print "Var Env:\n"
+        val _ = Control.message (Control.Top, fn _ =>
+          VE.layout ve)
         val (substs,ve) = normalizeVE ve
         val ty = RefTy.applySubsts substs ty
         val _ = print "Normalized Var Env:\n"
@@ -614,8 +609,8 @@ struct
         val _ = print "Type Constraints:\n"
         val _ = Control.message (Control.Top, fn _ =>
           TyCst.layout tycst)
-        val sc = SC.fromTyCst (ve,tycst)
-        val _ = print "Synthesis Condition:\n"
+        val sc = SC.elaborate $ SC.fromTyCst (ve,tycst)
+        val _ = print "Elaborated Synthesis Condition:\n"
         val _ = Control.message (Control.Top, fn _ =>
           SC.layout sc)
         val csc = TyConstraintSolve.newContext ve

@@ -53,6 +53,7 @@ sig
 
     structure TyCst : TY_CST
     val fromTyCst : VE.t * TyCst.t -> t
+    val elaborate : t -> t
     val layout : t -> Layout.t
   end
   

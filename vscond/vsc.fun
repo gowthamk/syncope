@@ -219,7 +219,9 @@ struct
   structure RInst = 
   struct
     datatype t = T of RelLang.RelId.t * TypeDesc.t vector
-    val layout = fn _ => L.empty
+    val toString = fn (T (rid,tyds)) =>
+      (RI.toString rid)^(Vector.toString TyD.toString tyds)
+    (*
     val idStrEq = fn (id1,id2) => (RI.toString id1 = RI.toString id2)
     fun equal (T (id1,tyds1), T (id2,tyds2)) =
       let
@@ -229,16 +231,23 @@ struct
       in
         eq
       end
+    *)
   end
 
   exception RInstNotFound
-  val rinstTab = HashTable.mkTable (MLton.hash, RInst.equal)
+  val rinstTab = HashTable.mkTable (MLton.hash, String.equals)
                       (117, RInstNotFound)
   fun getSymForRInst rinst = 
-    (SOME $ HashTable.lookup rinstTab(RInst.T rinst)) 
+    (SOME $ #2 $ HashTable.lookup rinstTab (RInst.toString $ RInst.T rinst)) 
       handle RInstNotFound => NONE
   fun addSymForRInst rinst rid =
-    HashTable.insert rinstTab(RInst.T rinst, rid)
+    let
+      val t = RInst.T rinst
+      val rinstStr = RInst.toString t
+    in
+      HashTable.insert rinstTab (rinstStr, (t,rid))
+    end
+    
 
   val count = ref 0
 
@@ -313,7 +322,7 @@ struct
         case vscpred of
           Simple sp  =>  Simple (elabSimplePred sp)
         | Conj vcps =>  Conj $ Vector.map (vcps, doIt)
-        | Disj vcps => Conj $ Vector.map (vcps, doIt)
+        | Disj vcps => Disj $ Vector.map (vcps, doIt)
         | Not vcp =>  Not $ doIt vcp
         | If vcps =>  If $ mapTuple doIt vcps
         | Iff vcps =>  Iff $ mapTuple doIt vcps
@@ -321,6 +330,25 @@ struct
     in
       doIt vscpred
     end
+
+  (* Summarizing rinstTab *)
+  fun summarizeRinstTab () = Vector.fromList $ List.map 
+      (HashTable.listItems rinstTab,
+        fn (RInst.T (relId,tydvec),relId') =>
+          let
+            val {ty,map} = RE.find (!thisRE) relId 
+              handle RE.RelNotFound _ =>
+                Error.bug ("Unknown Relation: "
+                  ^(RelLang.RelId.toString relId))
+            val RelTy.Tuple tydvec = RelTyS.instantiate (ty,tydvec)
+            val boolTyD = TyD.makeTconstr (Tycon.bool,[])
+            val relArgTyd = TyD.Trecord $ Record.tuple tydvec
+            val relTyD = TyD.makeTarrow (relArgTyd,boolTyD)
+            val relvid = Var.fromString $ RI.toString relId'
+          in
+            (relvid,relTyD)
+          end)
+
   (*
    * -------- Generic Layout functions ------------
    *)
@@ -346,7 +374,18 @@ struct
     | Iff (vc1,vc2) => L.seq [laytVSCPred vc1, L.str " <=> ", 
           laytVSCPred vc2]
 
+  (*
+   * ------ Eliminating meta-variable bindings. ----
+   *)
+  val metaVarSymBases = ["sv_", "_mark_", "hole_f"]
+  val isMetaVar = fn v => 
+    (fn vStr => List.exists (metaVarSymBases, 
+        fn symBase => String.hasPrefix (vStr,{prefix=symBase}))) 
+    (Var.toString v)
+  fun elimMetaVarBinds binds = Vector.keepAll (binds,
+    fn (v,_) => not $ isMetaVar v)
 
+  (* ---- VERIFICATION CONDITION ----- *)
   structure VerificationCondition =
   struct
 
@@ -420,39 +459,26 @@ struct
     fun layouts (vcs,output) =
       (output $ L.str "Verification Conditions:\n" ; output $ layout vcs)
 
-  fun elaborate vc =
-    let
-      val T (tydbinds,anteP,conseqP) = vc
+    fun elaborate vc =
+      let
+        val T (tydbinds,anteP,conseqP) = vc
 
-      val tyDB = Vector.fold (tydbinds,TyDBinds.empty, 
-        fn ((v,tyd),tyDB) => TyDBinds.add tyDB v tyd)
+        val tyDB = Vector.fold (tydbinds,TyDBinds.empty, 
+          fn ((v,tyd),tyDB) => TyDBinds.add tyDB v tyd)
 
-      val anteP' = elabVSCPred tyDB anteP
-      val conseqP' = elabVSCPred tyDB conseqP
+        val anteP' = elabVSCPred tyDB anteP
+        val conseqP' = elabVSCPred tyDB conseqP
 
-      val reltydbinds = List.map (HashTable.listItemsi rinstTab,
-        fn (RInst.T (relId,tydvec),relId') =>
-          let
-            val {ty,map} = RE.find (!thisRE) relId 
-              handle RE.RelNotFound _ =>
-                Error.bug ("Unknown Relation: "
-                  ^(RelLang.RelId.toString relId))
-            val RelTy.Tuple tydvec = RelTyS.instantiate (ty,tydvec)
-            val boolTyD = TyD.makeTconstr (Tycon.bool,[])
-            val relArgTyd = TyD.Trecord $ Record.tuple tydvec
-            val relTyD = TyD.makeTarrow (relArgTyd,boolTyD)
-            val relvid = Var.fromString $ RI.toString relId'
-          in
-            (relvid,relTyD)
-          end)
+        val reltydbinds = summarizeRinstTab ()
 
-      val tydbinds' = Vector.concat [tydbinds, Vector.fromList reltydbinds] 
+        val tydbinds' = Vector.concat [tydbinds, reltydbinds] 
 
-    in
-      T (tydbinds',anteP',conseqP')
-    end
+      in
+        T (tydbinds',anteP',conseqP')
+      end
   end
 
+  (* ---- SYNTHESIS CONDITION ----- *)
   structure SynthesisCondition =
   struct
     datatype t = T of tydbinds * vsc_pred
@@ -471,8 +497,25 @@ struct
             fn ((v1,tyd1),(v2,tyd2)) => varStrEq (v1,v2) andalso
                                         TyD.sameType (tyd1,tyd2))
         val tycstSC = (scbinds',scpred)
+        val (tydbinds,scp) = joinVCs (envSC,tycstSC)
       in
-        T $ joinVCs (envSC,tycstSC)
+        T (elimMetaVarBinds tydbinds, scp)
+      end
+
+    fun elaborate sc =
+      let
+        val T (tydbinds,scP) = sc
+
+        val tyDB = Vector.fold (tydbinds,TyDBinds.empty, 
+          fn ((v,tyd),tyDB) => TyDBinds.add tyDB v tyd)
+
+        val scP' = elabVSCPred tyDB scP
+
+        val reltydbinds = summarizeRinstTab ()
+
+        val tydbinds' = Vector.concat [tydbinds, reltydbinds] 
+      in
+        T (tydbinds',scP')
       end
 
     fun layout (T (tydbinds,vscp)) =
