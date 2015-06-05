@@ -15,15 +15,13 @@ local
    ../speclang/sources.mlb
    ../core-ml/sources.mlb
    ../specelab/sources.mlb
-   ../holerewrite/sources.mlb
-   ../vscond/sources.mlb
-   tyconstraintgen.sig
-   tyconstraintgen.fun
-   tyconstraintsolve.sig
-   tyconstraintsolve.fun
-   specverify.sig
-   specverify.fun
+   tycst.sig
+   tycst.fun
+   vsc.sig
+   vsc.fun
 in
-  signature SPEC_VERIFY
-  functor SpecVerify
+  signature TY_CST
+  functor TyCst
+  signature VS_CONDITION
+  functor VSCondition
 end

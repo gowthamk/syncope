@@ -22,8 +22,6 @@ struct
   structure RP = Predicate.RelPredicate
   structure L = Layout
 
-  structure TyCst = TyCst(structure VE = VE)
-
   type subst = Var.t*Var.t
   type substs = subst Vector.t
   fun $ (f,arg) = f arg

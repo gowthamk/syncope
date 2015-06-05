@@ -197,6 +197,7 @@ sig
       val specialize: t -> RefinementType.t
       val instantiate : t * TypeDesc.t vector -> RefinementType.t
       val layout : t -> Layout.t 
+      val applySubsts : (Var.t * Var.t) vector -> t -> t
     end
 
   structure RelSpec : 

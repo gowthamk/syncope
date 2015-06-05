@@ -588,6 +588,10 @@ struct
           RefinementType.mapTyD refty 
             (TypeDesc.instantiateTyvars substs)
         end
+
+      fun applySubsts substs (T {tyvars,refty,isAssume}) =
+        T {tyvars=tyvars, isAssume=isAssume, 
+           refty = RefinementType.applySubsts substs refty}
     end
 
   structure RelSpec =

@@ -117,11 +117,19 @@ structure ElaborateVarEnv = ElaborateVarEnv (structure SpecLang = SpecLang
 structure VE = ElaborateVarEnv.VE
 structure RE = ElaborateVarEnv.RE
 
+
+structure TyCst = TyCst (structure VE = VE)
+structure VSC = VSCondition (open SpecLang
+                             structure VE = VE
+                             structure RE = RE
+                             structure TyCst = TyCst)
+structure VC = VSC.VerificationCondition
+structure SC = VSC.SynthesisCondition
 structure SpecVerify = SpecVerify (structure VE = VE
                                    structure RE = RE
-                                   structure ANormalCoreML = ANormalCoreML)
+                                   structure ANormalCoreML = ANormalCoreML
+                                   structure VSC = VSC)
 
-structure VC = SpecVerify.VC
 
 val (z3_log,z3_log_close) = (fn stream => 
   (fn str => (Out.output (stream,str);
@@ -129,9 +137,9 @@ val (z3_log,z3_log_close) = (fn stream =>
    fn () => Out.close stream)) 
    (Out.openOut "catalyst.z3")
 
+(*
 structure VCE = VCEncode (structure VC = VC
                           val z3_log = z3_log)
-(*
 structure VCS = VCSolve (structure VC = VC
                          val z3_log = z3_log)
 structure HM = VCS.HoleMap
@@ -565,6 +573,8 @@ in
             val _ = Control.message (Control.Top, fn _ =>
               RE.layout re)
             val _ = print "\n"
+            (* Intializing Syncope conditions processor with relenv *)
+            val _ = VSC.init re
             val vcs = Control.pass 
               {
                 display = Control.NoDisplay,

@@ -3,9 +3,6 @@ struct
   open S
  
   structure SpecLang = VE.SpecLang
-  structure VC = VerificationCondition (open SpecLang
-                                        structure VE = VE
-                                        structure RE = RE)
   open SpecLang
   open ANormalCoreML
   structure TyD = TypeDesc
@@ -18,10 +15,15 @@ struct
   structure Rewr = HoleRewrite (structure VE = VE
                                 structure ANormalCoreML = ANormalCoreML
                                 structure SpecLang = SpecLang)
+  structure VC = VSC.VerificationCondition
+  structure SC = VSC.SynthesisCondition
+  structure TyCst = SC.TyCst
   structure TyConstraintGen = TyConstraintGen (structure VE = VE
                                                structure ANormalCoreML
-                                                   = ANormalCoreML)
-  structure TyCst = TyConstraintGen.TyCst
+                                                   = ANormalCoreML
+                                               structure TyCst = TyCst)
+  structure TyConstraintSolve = TyConstraintSolve (structure VE = VE
+                                                   structure TyCst = TyCst)
 
   type subst = Var.t*Var.t
   type substs = subst Vector.t
@@ -52,7 +54,56 @@ struct
     in
       (marker,VE.add ve (marker,dummyRefTyS()))
     end 
+  
+  fun simplifyPred p = 
+    let
+      open P
+    in
+      case p of
+        Conj (True,p2) => simplifyPred p2
+      | Conj (p1,True) => simplifyPred p1
+      | Conj (p1,p2) => Conj (simplifyPred p1, simplifyPred p2)
+      | Disj (True,p2) => True
+      | Disj (p1,True) => True
+      | Disj (p1,p2) => Disj (simplifyPred p1, simplifyPred p2)
+      | Not True => False
+      | Not False => True
+      | _ => p
+    end
 
+  fun simplifyVE ve =
+    let
+      exception Continue
+      fun elimVarEqs binds [] = binds
+        | elimVarEqs binds1 ((v,refTyS)::binds2) =
+          let
+            val RefTyS.T {refty, ...} = refTyS
+            val (bv,tyd,refn) = case refty of RefTy.Base x => x
+              | _ => raise Continue
+            val p = P.applySubsts (Vector.new1 (v,bv)) refn
+            val p' = simplifyPred p
+            val (v1,v2) = case p' of
+                P.Base (BP.Eq (BP.Var v1, BP.Var v2)) => (v1,v2)
+              | _ => raise Continue
+            val v1v2s = Vector.new1 (v1,v2)
+            fun applySubstInBinds binds = List.map 
+              (binds, 
+                fn (v,refTyS) =>
+                  (if varEq (v,v2) then v1 else v,
+                   RefTyS.applySubsts v1v2s refTyS))
+            val binds1' = applySubstInBinds binds1
+            val binds2' = applySubstInBinds binds2
+          in
+            elimVarEqs binds1' binds2'
+          end handle Continue => 
+                elimVarEqs ((v,refTyS)::binds1) binds2
+      val refTyBinds = Vector.toList $ VE.toVector ve
+      val refTyBinds' = elimVarEqs [] refTyBinds
+      val ve' = List.fold (refTyBinds', VE.empty,
+          fn (bind,ve) => VE.add ve bind)
+    in
+      ve'
+    end
   (*
    * Produces a refTy' with base types taken from TyD and
    * refinements from refTy, given that user-provided base
@@ -534,7 +585,8 @@ struct
     | Exp.Hole {id} => 
       let
         val _ = print $ "---- Hole("^id^") ----\n"
-        val _ = print "Var Env:\n"
+        val ve = simplifyVE ve
+        val _ = print "Simplified Var Env:\n"
         val _ = Control.message (Control.Top, fn _ =>
           VE.layout ve)
         val rc = Rewr.newContext (ve,exp,ty)
@@ -547,6 +599,12 @@ struct
         val _ = print "Type Constraints:\n"
         val _ = Control.message (Control.Top, fn _ =>
           TyCst.layout tycst)
+        val sc = SC.fromTyCst (ve,tycst)
+        val _ = print "Synthesis Condition:\n"
+        val _ = Control.message (Control.Top, fn _ =>
+          SC.layout sc)
+        val csc = TyConstraintSolve.newContext ve
+        val csolve = #solve csc
       in
         raise (Fail "Unimpl.")
       end
