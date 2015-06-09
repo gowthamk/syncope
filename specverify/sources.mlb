@@ -17,10 +17,9 @@ local
    ../specelab/sources.mlb
    ../holerewrite/sources.mlb
    ../vscond/sources.mlb
+   ../vscencode/sources.mlb
    tyconstraintgen.sig
    tyconstraintgen.fun
-   tyconstraintsolve.sig
-   tyconstraintsolve.fun
    specverify.sig
    specverify.fun
 in

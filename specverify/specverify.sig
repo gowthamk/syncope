@@ -14,6 +14,7 @@ sig
   sharing VE.SpecLang.Const = ANormalCoreML.Const
   sharing VE.SpecLang.Prim = ANormalCoreML.Prim
   sharing VE.SpecLang.SourceInfo = ANormalCoreML.SourceInfo
+  val z3_log : string -> unit
 end
 signature SPEC_VERIFY = 
 sig

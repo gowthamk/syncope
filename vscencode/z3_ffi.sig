@@ -31,6 +31,7 @@ sig
   type z3_literals
   type z3_tactic
 
+  val dummyModel : unit -> z3_model
   val Z3_mk_gt : (z3_context * z3_ast * z3_ast) -> z3_ast
   val Z3_ast_vector_get : (z3_context * z3_ast_vector * int) -> z3_ast
   val Z3_mk_real2int : (z3_context * z3_ast) -> z3_ast
@@ -54,7 +55,7 @@ sig
   val Z3_get_algebraic_number_lower : (z3_context * z3_ast * int) -> z3_ast
   val Z3_mk_rem : (z3_context * z3_ast * z3_ast) -> z3_ast
   val Z3_get_quantifier_bound_sort : (z3_context * z3_ast * int) -> z3_sort
-  val Z3_eval : (z3_context * z3_model * z3_ast * MLton.Pointer.t) -> int
+  val Z3_eval : (z3_context * z3_model * z3_ast * z3_ast ref) -> int
   val Z3_probe_ge : (z3_context * z3_probe * z3_probe) -> z3_probe
   val Z3_mk_bvsdiv_no_overflow : (z3_context * z3_ast * z3_ast) -> z3_ast
   val Z3_simplify_get_help : (z3_context) -> string
@@ -282,7 +283,7 @@ sig
   val Z3_disable_trace : (string) -> unit
   val Z3_mk_bvmul_no_overflow : (z3_context * z3_ast * z3_ast * int) -> z3_ast
   val Z3_get_symbol_kind : (z3_context * z3_symbol) -> int
-  val Z3_eval_func_decl : (z3_context * z3_model * z3_func_decl * MLton.Pointer.t) -> int
+  val Z3_eval_func_decl : (z3_context * z3_model * z3_func_decl * z3_ast ref) -> int
   val Z3_func_entry_dec_ref : (z3_context * z3_func_entry) -> unit
   val Z3_ast_vector_to_string : (z3_context * z3_ast_vector) -> string
   val Z3_get_denominator : (z3_context * z3_ast) -> z3_ast
@@ -340,7 +341,7 @@ sig
   val Z3_mk_exists_const : (z3_context * int * int * z3_app vector * int * z3_pattern vector * z3_ast) -> z3_ast
   val Z3_get_datatype_sort_recognizer : (z3_context * z3_sort * int) -> z3_func_decl
   val Z3_parse_smtlib_file : (z3_context * string * int * z3_symbol vector * z3_sort vector * int * z3_symbol vector * z3_func_decl vector) -> unit
-  val Z3_check_and_get_model : (z3_context * MLton.Pointer.t) -> int
+  val Z3_check_and_get_model : (z3_context * z3_model ref) -> int
   val Z3_solver_set_params : (z3_context * z3_solver * z3_params) -> unit
   val Z3_fixedpoint_update_rule : (z3_context * z3_fixedpoint * z3_ast * z3_symbol) -> unit
   val Z3_is_eq_sort : (z3_context * z3_sort * z3_sort) -> int
@@ -417,7 +418,7 @@ sig
   val Z3_mk_int_symbol : (z3_context * int) -> z3_symbol
   val Z3_tactic_using_params : (z3_context * z3_tactic * z3_params) -> z3_tactic
   val Z3_get_smtlib_num_sorts : (z3_context) -> int
-  val Z3_eval_decl : (z3_context * z3_model * z3_func_decl * int * z3_ast vector * MLton.Pointer.t) -> int
+  val Z3_eval_decl : (z3_context * z3_model * z3_func_decl * int * z3_ast vector * z3_ast ref) -> int
   val Z3_mk_unary_minus : (z3_context * z3_ast) -> z3_ast
   val Z3_mk_datatype : (z3_context * z3_symbol * int * z3_constructor vector) -> z3_sort
   val Z3_mk_bvmul : (z3_context * z3_ast * z3_ast) -> z3_ast

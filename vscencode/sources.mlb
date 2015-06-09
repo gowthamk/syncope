@@ -17,7 +17,7 @@ local
   ../atoms/sources.mlb
   ../control/sources.mlb
   ../lib/mlton/sources.mlb
-  ../specverify/sources.mlb
+   ../vscond/sources.mlb
   z3_ffi.sig
   z3_encode.sig
   ann "allowFFI true" in
@@ -26,9 +26,11 @@ local
     z3_encode.fun
   end
   (*z3_test.sml*)
-  vcencode.sig
-  vcencode.fun
+  model.sig
+  vscencode.sig
+  vscencode.fun
 in
-  signature VC_ENCODE
-  functor VCEncode
+  signature MODEL
+  signature VSC_ENCODE
+  functor VSCEncode
 end

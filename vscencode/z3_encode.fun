@@ -8,6 +8,7 @@ struct
                 | Bool of z3_sort
                 | T of string * z3_sort
   datatype ast = AST of z3_ast * sort
+  datatype satisfiability = SAT | UNSAT | UNKNOWN
   (*
    * Set Invariant : len(ty) = len(domain(pred)) 
    * Null constructor is motivated by two reasons:
@@ -21,10 +22,13 @@ struct
    *)
   datatype set = Null
                | Set of {ty : sort vector,
-                         pred : ast vector -> z3_ast}
-  datatype struc_rel = SR of {rel : ast -> set}
+                         pred : ast vector -> z3_ast,
+                         z3_func : z3_func_decl}
+  datatype struc_rel = SR of {rel : ast -> set,
+                              z3_func : z3_func_decl}
   type assertion = z3_ast
   type context = z3_context
+  type model = z3_model
   val log = z3_log
 
   fun $ (f,arg) = f arg
@@ -44,11 +48,16 @@ struct
     end
   val genTypeName = mkGenName (0,"T")
   val genSetName = mkGenName (0,"set")
+  val genConstName = mkGenName (0,"a!")
 
   fun mkDefaultContext () =
     let
       val cfg = Z3_mk_config ()
       val _   = Z3_global_param_set ("smt.macro-finder","true")
+      val _   = Z3_global_param_set ("model.partial","false")
+      val _   = Z3_global_param_set ("timeout","3")
+      val _   = Z3_global_param_set ("trace","true") 
+      val _   = Z3_global_param_set ("trace_file_name","z3.trace") 
       val ctx = Z3_mk_context cfg
       val _   = Z3_del_config cfg
     in
@@ -59,10 +68,40 @@ struct
     let
       val _ = log "(check-sat)"
       val _ = log "\n\n"
+      val res = Z3_check ctx
     in
-      Z3_check ctx
+      case res of 1 => SAT | 0 => UNKNOWN | ~1 => UNSAT
+        | _ => Error.bug "Integer received when Z3_lbool expected"
     end 
+
+  fun checkContextGetModel ctx = 
+    let
+      val modelPtr = ref $ dummyModel ()
+      val _ = Z3_push ctx
+      val _ = log "(push)\n"
+      val res = Z3_check_and_get_model (ctx,modelPtr)
+      val _ = log "  (check-sat)\n"
+      val _ = log "  (get-model)\n"
+      val _ = Z3_pop (ctx,1)
+      val _ = log "(pop)"
+      val _ = log "\n\n"
+      val satisfiability = case res of 1 => SAT 
+        | 0 => UNKNOWN | ~1 => UNSAT
+        | _ => Error.bug "Integer received when Z3_lbool expected"
+    in
+      (satisfiability, !modelPtr)
+    end 
+
   val delContext = Z3_del_context
+
+  fun isSortEq (Int _,Int _) = true
+    | isSortEq (Bool _ , Bool _) = true
+    | isSortEq (T (name1,_), T (name2, _)) = (name1 = name2)
+    | isSortEq _ = false
+
+  fun isPrimSort (Int _) = true
+    | isPrimSort (Bool _) = true
+    | isPrimSort _ = false
 
   (*
    * This function implements an object with encapsulated
@@ -96,12 +135,6 @@ struct
           T (name, z3_sort)
         end
 
-      fun typeCheckAst (AST (ast,sort),sort') = case (sort,sort') of
-          (Int _,Int _) => true
-        | (Bool _ , Bool _) => true
-        | (T (name1,_), T (name2, _)) => name1 = name2
-        | _ => false
-
       fun astToZ3Ast (AST (z3_ast,sort)) = z3_ast
 
       fun astToString (AST (z3_ast,_)) =
@@ -114,9 +147,20 @@ struct
 
       fun sortToString sort = Z3_sort_to_string (ctx, sortToZ3Sort sort)
 
-      fun constToString ast = Z3_ast_to_string (ctx, astToZ3Ast ast)
+      fun constToString ast = 
+        case String.fromCString $ astToString ast of
+          SOME str => str 
+        | NONE => Error.bug "Z3_ffi: cannot convert C string \
+                            \of a Z3 const to SML string\n"
+
+      fun assnToString assnAst = astToString 
+                      (AST (assnAst, Bool bool_sort))
 
       fun strucRelToString sr = raise (Fail "unimpl")
+
+      fun typeCheckAst (AST (_,sort),sort') = isSortEq (sort,sort')
+
+      fun sameTypeAsts (ast1, AST (_,sort2)) = typeCheckAst (ast1,sort2)
 
       fun mkEq (AST (x1,_),AST (x2,_)) = Z3_mk_eq (ctx,x1,x2)
 
@@ -130,6 +174,8 @@ struct
         in
           AST (const,sort)
         end
+
+      fun mkNewConst sort = mkConst (genConstName (), sort)
 
       fun mkBoundVar ctx (index,sort) = 
         AST (Z3_mk_bound (ctx,index,sortToZ3Sort sort),sort)
@@ -161,12 +207,16 @@ struct
           val pred = fn asts => 
             let
               (* Following results in Size exception. Reason unknown. *)
+              (* Update: Fixed. Reason: C strings have to be converted
+                        to SML strings. *)
               (*val astStr = fn _ =>(L.toString $ L.vector $ Vector.map 
-                (asts, fn ast => L.str $ astToString ast))*)
-              (*val sortStrs = List.map (Vector.toList sorts, fn s => 
+                (asts, fn ast => L.str $ astToString ast))
+              val sortStrs = List.map (Vector.toList sorts, fn s => 
                 (sortToString s))
+              val f = fn s => print $ (Int.toString $ String.length s)^"\n"
               val sortStr = fn _ => (List.fold (sortStrs, "(", fn (s,acc) =>
-                acc^","^s))^")"*)
+                (f s; acc^","^s)))^")"
+              val _ = print $ sortStr () *)
               val errMsg = (fn _ => "Type Mismatch. Set: "^name^".\n")
               val _ = assert (Vector.length asts = Vector.length sorts,
                 errMsg ())
@@ -177,18 +227,20 @@ struct
               Z3_mk_app (ctx, func, nargs, z3_asts)
             end
         in
-          Set {ty = sorts, pred = pred}
+          Set {ty = sorts, pred = pred, z3_func = func}
         end
 
       fun mkStrucRel (name,sorts) =
         let
           val nargs = Vector.length sorts
           val domainTy = Vector.sub (sorts,0)
-          val Set {ty,pred} = mkSet (name,sorts)
+          val Set {ty,pred,z3_func} = mkSet (name,sorts)
           val rel = fn ast => 
             let
               val _ = assert (typeCheckAst (ast,domainTy),
-                "Type error at app of relation "^name)
+                "Type error at app of relation "^name^".\n"
+                ^"Expected: "^(sortToString domainTy)^".\n"
+                ^"Got: "^(sortToString $ sortOfAst ast)^".\n")
               (*
                * Constructing (n-1)-arity set from an n-arity
                * boolean function. 
@@ -198,13 +250,13 @@ struct
               val pred' = fn asts => pred $ Vector.concat 
                 [Vector.new1 ast, asts]
             in
-              Set {ty = ty', pred = pred'}
+              Set {ty = ty', pred = pred', z3_func=z3_func}
             end
         in
-          SR {rel = rel}
+          SR {rel = rel, z3_func = z3_func}
         end
 
-      fun mkStrucRelApp (SR {rel}, ast) = rel ast
+      fun mkStrucRelApp (SR {rel, ...}, ast) = rel ast
 
       fun mkSetProp (sorts : sort vector, propfn : ast vector -> 
         (z3_pattern vector * z3_ast)) =
@@ -212,12 +264,17 @@ struct
           val numbvs = Vector.length sorts
           val bvs = Vector.mapi (sorts, fn (i,sort) => 
             mkBoundVar ctx (i,sort))
-          val bvtys = Vector.map (sorts,sortToZ3Sort)
           (* 
-           * De-brujin. Therefore: bv_n,bv_n-1,...,bv_0 
+           * De-brujin. Therefore: bv_n:T_n, bv_n-1:T_n-1,...,bv_0:T_0 
            *)
           val bvnames = Vector.tabulate (numbvs, fn i => mkSym 
             ("bv"^(Int.toString (numbvs-i-1))))
+          val bvtys = Vector.rev $ Vector.map (sorts,sortToZ3Sort)
+          (* 
+           * Note: bvs satisfies the inv: ∀i. bvs[i] : sorts[i].
+           * Since prop expects (sorts[0] * sorts[1] * ... * sorts[n]), 
+           * it is apt to pass (bvs[0] * bvs[1] * ... * bvs[n]).
+           *)
           val (patterns,prop) = propfn bvs
           val forall = Z3_mk_forall (ctx, 0, 
                         Vector.length patterns, 
@@ -245,7 +302,7 @@ struct
 
       fun mkEmptySet sorts = 
         let
-          val set as Set {ty,pred} = mkSet (genSetName (),sorts)
+          val set as Set {ty,pred,...} = mkSet (genSetName (),sorts)
           val _ = assertSetProp (sorts, fn bvAsts =>
             let
               val fnapp = pred bvAsts
@@ -261,7 +318,7 @@ struct
       fun mkSingletonSet asts = 
         let
           val sorts = Vector.map (asts,sortOfAst)
-          val set as Set {ty,pred} = mkSet (genSetName (),sorts)
+          val set as Set {ty,pred,...} = mkSet (genSetName (),sorts)
           val _ = assertSetProp (sorts, fn bvAsts =>
             let
               val fnapp = pred bvAsts
@@ -287,7 +344,8 @@ struct
           (Null,Null) => truee
         | (Null,Set {ty,...}) => mkSetEqAssertion (mkEmptySet ty, s2)
         | (Set {ty,...},Null) => mkSetEqAssertion (s1, mkEmptySet ty)
-        | (Set {ty=sorts1,pred=pred1}, Set {ty=sorts2,pred=pred2}) => 
+        | (Set {ty=sorts1,pred=pred1, ...}, 
+           Set {ty=sorts2,pred=pred2, ...}) => 
           (*
            * Pre-condition of sorts1 = sorts2 is automatically
            * checked when pred1 and pred2 are applied
@@ -306,7 +364,8 @@ struct
           (Null,Null) => falsee
         | (Null,Set {ty,...}) => truee
         | (Set {ty,...},Null) => falsee
-        | (Set {ty=sorts1,pred=pred1}, Set {ty=sorts2,pred=pred2}) => 
+        | (Set {ty=sorts1,pred=pred1, ...}, 
+           Set {ty=sorts2,pred=pred2, ...}) => 
           (*
            * Pre-condition of sorts1 = sorts2 is automatically
            * checked when pred1 and pred2 are applied
@@ -322,9 +381,10 @@ struct
             end)
        
       val mkUnion = fn (Null,s2) => s2 | (s1,Null) => s1 
-        | (Set {ty=sorts1,pred=pred1}, Set {ty=sorts2,pred=pred2}) =>
+        | (Set {ty=sorts1,pred=pred1, ...}, 
+           Set {ty=sorts2,pred=pred2, ...}) =>
           let
-            val s as Set {ty,pred} = mkSet (genSetName (), sorts1)
+            val s as Set {ty,pred, ...} = mkSet (genSetName (), sorts1)
             val _ = assertSetProp (ty, fn bvAsts =>
               let
                 val fnapp = pred bvAsts
@@ -342,10 +402,11 @@ struct
           end
        
       val mkCrossPrd = fn (Null,_) => Null | (_,Null) => Null 
-        | (Set {ty=sorts1,pred=pred1}, Set {ty=sorts2,pred=pred2}) =>
+        | (Set {ty=sorts1,pred=pred1, ...}, 
+           Set {ty=sorts2,pred=pred2, ...}) =>
           let
             val sorts = Vector.concat [sorts1,sorts2]
-            val s as Set {ty,pred} = mkSet (genSetName (), sorts)
+            val s as Set {ty,pred, ...} = mkSet (genSetName (), sorts)
             val _ = assertSetProp (ty, fn bvAsts =>
               let
                 val bvAsts1 = Vector.prefix (bvAsts,Vector.length 
@@ -367,9 +428,10 @@ struct
           end
 
       val mkDiff = fn (Null,s2) => Null | (s1,Null) => s1 
-        | (Set {ty=sorts1,pred=pred1}, Set {ty=sorts2,pred=pred2}) =>
+        | (Set {ty=sorts1,pred=pred1, ...}, 
+           Set {ty=sorts2,pred=pred2, ...}) =>
           let
-            val s as Set {ty,pred} = mkSet (genSetName (), sorts1)
+            val s as Set {ty,pred, ...} = mkSet (genSetName (), sorts1)
             val _ = assertSetProp (ty, fn bvAsts =>
               let
                 val fnapp = pred bvAsts
@@ -397,11 +459,195 @@ struct
 
       fun mkOr asrv = Z3_mk_or (ctx, Vector.length asrv, asrv) 
 
-
       fun mkConstEqAssertion (ast1 as AST (x1,s1), AST (x2,s2)) = 
         (typeCheckAst (ast1,s2); Z3_mk_eq (ctx,x1,x2))
 
+      fun mkDistinctness asts = 
+        let
+          val equalities = List.map (List.subsets (asts,2),
+              fn [x1,x2] => mkConstEqAssertion (x1,x2))
+        in
+          (mkNot o mkOr) $ Vector.fromList equalities
+        end
+
+      val mkDistinctness = fn asts => if Vector.length asts < 2 
+            then truee else mkDistinctness $ Vector.toList asts
+
+      fun mkUniverseAssn sort asts = 
+        mkSetProp (Vector.new1 sort, fn bvAsts => 
+          let
+            val bvAst = Vector.sub (bvAsts,0)
+            val equalities = Vector.map (asts, 
+              fn ast => mkConstEqAssertion (bvAst,ast))
+          in
+            (Vector.new0 (), mkOr equalities)
+          end)
+
       fun mkInt i = AST (Z3_mk_int (ctx, i, int_sort), Int int_sort)
+
+      fun applySubstsInAssn substs assn =
+        let
+          val num_exprs = Vector.length substs
+          val (to,from) = Vector.unzip $ Vector.map (substs,
+            fn (newAst,oldAst) => 
+              (assert (sameTypeAsts (newAst,oldAst), "Invalid \
+                      \ substitution attempted\n"); 
+               (astToZ3Ast newAst, astToZ3Ast oldAst)))
+        in
+          Z3_substitute (ctx, assn, num_exprs, from, to)
+        end
+
+      fun doPush () = (log "(push)\n"; Z3_push ctx)
+
+      fun doPop () = (log "(pop)\n"; Z3_pop (ctx,1))
+
+      fun modelToString model = Z3_model_to_string (ctx,model)
+
+      fun evalConst model (lhsAst as AST (z3_ast,sort))= 
+        let
+          val val_ast_ptr = ref truee
+          val res = Z3_eval (ctx,model,z3_ast,val_ast_ptr)
+          val _ = case res of 1 => ()
+            | 0 => Error.bug ("Z3_eval error\n")
+          val val_ast = ! val_ast_ptr
+          val rhsAst = AST (val_ast, sort)
+        in
+          mkConstEqAssertion (lhsAst, rhsAst)
+        end
+
+      fun evalStrucRel model (SR {z3_func, rel, ...}) =
+        let
+          val arity = Z3_get_arity (ctx, z3_func)
+          val srArgSorts = Vector.tabulate (arity, fn i =>
+            let
+              val z3_sort = Z3_get_domain (ctx, z3_func, i)
+              val str = Z3_sort_to_string (ctx, z3_sort)
+            in
+              T (str,z3_sort)
+            end)
+          val fn_body_ptr = ref truee
+          fun propfn bvAsts = 
+            let
+              val bv0 = Vector.sub (bvAsts,0)
+              val bvAsts' = Vector.dropPrefix (bvAsts,1)
+              val Set {ty, pred, ...} = rel bv0
+              val lhs = pred bvAsts'
+              val arg_asts = Vector.map (bvAsts,astToZ3Ast)
+              val _ = Z3_eval_decl (ctx, model, z3_func,
+                              arity, arg_asts, fn_body_ptr)
+              val rhs = !fn_body_ptr
+              val iff = Z3_mk_iff (ctx,lhs,rhs)
+              val pats = mkSimplePatterns [] (* [lhs] *)
+            in
+              (pats, iff)
+            end
+          val qprop = mkSetProp (srArgSorts,propfn)
+          (*val qprop_str = Z3_ast_to_string (ctx,qprop)
+          val _ = print "\tQuantified Prop:\n"
+          val _ = print $ "\t"^qprop_str^"\n" *)
+        in
+          qprop
+        end
+
+      fun getSortUniverse model sort = 
+        let
+          val _ = if isPrimSort sort then raise (Fail "Sort universe\
+            \ cannot be enumerated for a primitive type.") else ()
+          val z3_sort = sortToZ3Sort sort
+          val ast_vec = Z3_model_get_sort_universe (ctx,model,z3_sort)
+          val size = Z3_ast_vector_size (ctx,ast_vec)
+        in
+            Vector.tabulate (size, 
+              fn i => AST (Z3_ast_vector_get (ctx, ast_vec, i),sort))
+        end
+
+      fun debug model (vStr, SR {z3_func, rel, ...}) =
+        let
+          val _ = print $ "Details of interpretation for the \
+              \function "^vStr^":\n"
+          val numParams = Z3_get_decl_num_parameters (ctx, z3_func)
+          val numParamsStr = Int.toString numParams
+          val interp = Z3_model_get_func_interp (ctx, model, z3_func)
+          val arity = Z3_func_interp_get_arity (ctx,interp)
+          val arityStr = Int.toString arity
+          val srArgSorts = Vector.tabulate (arity, fn i =>
+            let
+              val z3_sort = Z3_get_domain (ctx, z3_func, i)
+              val str = Z3_sort_to_string (ctx, z3_sort)
+            in
+              T (str,z3_sort)
+            end)
+
+          val fn_body_ptr = ref truee
+          (*
+          val fn_body = !fn_body_ptr
+          val _ = print "\tFn Body:\n"
+          val _ = print $ "\t"^(Z3_ast_to_string (ctx,fn_body))^"\n"
+          val params = Z3_mk_params ctx
+          val sym1 = Z3_mk_string_symbol (ctx,"ite_extra_rules")
+          val _ = Z3_params_set_bool (ctx, params, sym1, 1)
+          val sym2 = Z3_mk_string_symbol (ctx,"local_ctx")
+          val _ = Z3_params_set_bool (ctx, params, sym2, 1)
+          val simpl_fn_body = Z3_simplify_ex (ctx, fn_body, params)
+          val _ = print "\tSimplified Fn Body:\n"
+          val _ = print $ "\t"^(Z3_ast_to_string (ctx,simpl_fn_body))^"\n"
+          *)
+          (* Quantified prop *)
+          fun propfn bvAsts = 
+            let
+              val bv0 = Vector.sub (bvAsts,0)
+              val bvAsts' = Vector.dropPrefix (bvAsts,1)
+              val Set {ty, pred, ...} = rel bv0
+              val lhs = pred bvAsts'
+              val arg_asts = Vector.map (bvAsts,astToZ3Ast)
+              val _ = Z3_eval_decl (ctx, model, z3_func,
+                              arity, arg_asts, fn_body_ptr)
+              val rhs = !fn_body_ptr
+              val iff = Z3_mk_iff (ctx,lhs,rhs)
+              val pats = mkSimplePatterns [] (* [lhs] *)
+            in
+              (pats, iff)
+            end
+          val qprop = mkSetProp (srArgSorts,propfn)
+          val qprop_str = Z3_ast_to_string (ctx,qprop)
+          val _ = print "\tQuantified Prop:\n"
+          val _ = print $ "\t"^qprop_str^"\n"
+          (*
+          val num_entries = Z3_func_interp_get_num_entries (ctx,interp)
+          val num_entries_str = Int.toString num_entries
+          val entry_strs = List.tabulate (num_entries, 
+            fn i => 
+              let
+                val iStr = (Int.toString i)
+                val entry = Z3_func_interp_get_entry (ctx, interp, i)
+                val nArgs = Z3_func_entry_get_num_args (ctx, entry)
+                val args = List.tabulate (nArgs, 
+                  fn i => Z3_func_entry_get_arg (ctx, entry, i))
+                val args_str = List.toString (fn arg =>
+                    Z3_ast_to_string (ctx, arg)) args
+                val entry_ast = Z3_func_entry_get_value (ctx, entry)
+                val entry_str = Z3_ast_to_string (ctx, entry_ast)
+              in
+                "fn "^args_str^" => "^entry_str
+              end)
+          val else_ast = Z3_func_interp_get_else (ctx,interp)
+          val else_ast_str = Z3_ast_to_string (ctx,else_ast)
+          val _ = print $ "\tNum Params: "^numParamsStr^"\n"
+          val _ = print $ "\tArity: "^arityStr^"\n"
+          val _ = print $ "\tNum entries: "^num_entries_str^"\n"
+          val _ = print $ "\tEntries:\n"
+          val _ = Control.message (Control.Top, fn _ =>
+              L.align $ List.map (entry_strs, L.str))
+          val _ = print "\t'else' entry:\n"
+          val _ = print $ "\t\t"^else_ast_str^"\n"
+          *)
+          (*
+           * What is Z3_get_model_func_entry_arg?
+           *)
+        in
+          ()
+        end
+ 
     in
       {
         bool_sort = Bool bool_sort,
@@ -410,11 +656,15 @@ struct
         const_true = AST (truee, Bool bool_sort),
         truee = truee,
         falsee = falsee,
+        isSortEq = isSortEq,
+        isPrimSort = isPrimSort,
         sortToString = sortToString,
         constToString = constToString,
         strucRelToString = strucRelToString,
+        assnToString = assnToString,
         mkUninterpretedSort = mkUninterpretedSort,
         mkConst = mkConst,
+        mkNewConst = mkNewConst,
         mkInt = mkInt,
         mkStrucRel = mkStrucRel,
         mkStrucRelApp = mkStrucRelApp,
@@ -431,7 +681,17 @@ struct
         mkIff = mkIff,
         mkAnd = mkAnd,
         mkOr = mkOr,
-        dischargeAssertion = dischargeAssertion
+        mkDistinctness = mkDistinctness,
+        mkUniverseAssn = mkUniverseAssn,
+        applySubstsInAssn = applySubstsInAssn,
+        dischargeAssertion = dischargeAssertion,
+        doPush = doPush,
+        doPop = doPop,
+        modelToString = modelToString,
+        evalConst = evalConst,
+        evalStrucRel = evalStrucRel,
+        getSortUniverse = getSortUniverse,
+        debug = debug
        }
     end
 end

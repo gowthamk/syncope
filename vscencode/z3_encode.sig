@@ -12,6 +12,8 @@ sig
   type ast
   type struc_rel
   type assertion
+  type model
+  datatype satisfiability = SAT | UNSAT | UNKNOWN
   exception InvalidOperation
   val mkDefaultContext : unit -> context
   val generateAPI : context -> 
@@ -22,11 +24,15 @@ sig
       const_true : ast,
       falsee : assertion,
       truee : assertion,
+      isSortEq : sort * sort -> bool,
+      isPrimSort : sort -> bool,
       sortToString : sort -> string,
       constToString : ast -> string,
+      assnToString : assertion -> string,
       strucRelToString : struc_rel -> string,
       mkUninterpretedSort :  unit -> sort,
       mkConst : (string * sort) -> ast,
+      mkNewConst : sort -> ast,
       mkInt : int -> ast,
       mkStrucRel :  (string * sort vector) -> struc_rel,
       mkStrucRelApp : struc_rel * ast -> set,
@@ -43,8 +49,19 @@ sig
       mkIff : assertion * assertion -> assertion,
       mkAnd : assertion vector -> assertion,
       mkOr : assertion vector -> assertion,
-      dischargeAssertion :  assertion -> unit
+      mkDistinctness : ast vector -> assertion,
+      mkUniverseAssn: sort -> ast vector -> assertion,
+      applySubstsInAssn : (ast * ast) vector -> assertion -> assertion,
+      dischargeAssertion :  assertion -> unit,
+      doPush : unit -> unit,
+      doPop : unit -> unit,
+      modelToString : model -> string,
+      evalConst : model -> ast -> assertion,
+      evalStrucRel: model -> struc_rel -> assertion,
+      getSortUniverse : model -> sort -> ast vector,
+      debug : model -> (string * struc_rel) -> unit
     }
-  val checkContext : context -> int
+  val checkContext : context -> satisfiability
+  val checkContextGetModel : context -> (satisfiability * model)
   val delContext : context -> unit
 end

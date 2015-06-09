@@ -31,6 +31,8 @@ struct
   type z3_literals = MLton.Pointer.t
   type z3_tactic = MLton.Pointer.t
 
+  val dummyModel = fn () => MLton.Pointer.null
+
   val hndl = DynLink.dlopen 
       ("libz3.dylib", DynLink.RTLD_LAZY);
 
@@ -1173,7 +1175,8 @@ struct
 
   fun Z3_eval_decl (c,m,d,num_args,args,v) = 
   let
-    val dyn_Z3_eval_decl = _import * : DynLink.fptr -> (z3_context * z3_model * z3_func_decl * int * z3_ast vector * MLton.Pointer.t) -> int;
+    val dyn_Z3_eval_decl = _import * : DynLink.fptr -> (z3_context *
+        z3_model * z3_func_decl * int * z3_ast vector * z3_ast ref) -> int;
     val Z3_eval_decl_ptr = DynLink.dlsym(hndl, "Z3_eval_decl")
   in
     dyn_Z3_eval_decl Z3_eval_decl_ptr (c,m,d,num_args,args,v)
@@ -1303,8 +1306,12 @@ struct
   let
     val dyn_Z3_sort_to_string = _import * : DynLink.fptr -> (z3_context * z3_sort) -> string;
     val Z3_sort_to_string_ptr = DynLink.dlsym(hndl, "Z3_sort_to_string")
+    val cstring = dyn_Z3_sort_to_string Z3_sort_to_string_ptr (c,s)
+    val errMsg = "Z3_ffi: Could not convert the string \
+                     \returned by Z3_sort_to_string to SML string\n"
   in
-    dyn_Z3_sort_to_string Z3_sort_to_string_ptr (c,s)
+    case String.fromCString cstring of SOME str => str
+      | NONE => raise (Fail errMsg)
   end
 
   fun Z3_get_decl_int_parameter (c,d,idx) = 
@@ -1789,7 +1796,8 @@ struct
 
   fun Z3_check_and_get_model (c,m) = 
   let
-    val dyn_Z3_check_and_get_model = _import * : DynLink.fptr -> (z3_context * MLton.Pointer.t) -> int;
+    val dyn_Z3_check_and_get_model = _import * : DynLink.fptr ->
+         (z3_context * z3_model ref) -> int;
     val Z3_check_and_get_model_ptr = DynLink.dlsym(hndl, "Z3_check_and_get_model")
   in
     dyn_Z3_check_and_get_model Z3_check_and_get_model_ptr (c,m)
@@ -2253,7 +2261,8 @@ struct
 
   fun Z3_eval_func_decl (c,m,decl,v) = 
   let
-    val dyn_Z3_eval_func_decl = _import * : DynLink.fptr -> (z3_context * z3_model * z3_func_decl * MLton.Pointer.t) -> int;
+    val dyn_Z3_eval_func_decl = _import * : DynLink.fptr ->
+          (z3_context * z3_model * z3_func_decl * z3_ast ref) -> int;
     val Z3_eval_func_decl_ptr = DynLink.dlsym(hndl, "Z3_eval_func_decl")
   in
     dyn_Z3_eval_func_decl Z3_eval_func_decl_ptr (c,m,decl,v)
@@ -2976,8 +2985,17 @@ struct
   let
     val dyn_Z3_ast_to_string = _import * : DynLink.fptr -> (z3_context * z3_ast) -> string;
     val Z3_ast_to_string_ptr = DynLink.dlsym(hndl, "Z3_ast_to_string")
+    val cstring = dyn_Z3_ast_to_string Z3_ast_to_string_ptr (c,a)
+    val errMsg = "Z3_ffi: Could not convert the string \
+                     \returned by Z3_ast_to_string to SML string\n"
   in
-    dyn_Z3_ast_to_string Z3_ast_to_string_ptr (c,a)
+    (* fromCString is terminating the string at the newline character
+       (Experimentally verified). Alternative cstring parsing:
+         http://mlton.org/pipermail/mlton-user/2006-December/000942.html
+       can be tried. *)
+    case String.fromCString cstring of SOME str => str
+      | NONE => raise (Fail errMsg)
+    (* cstring *)
   end
 
   fun Z3_get_app_num_args (c,a) = 
@@ -4070,7 +4088,8 @@ struct
 
   fun Z3_eval (c,m,t,v) = 
   let
-    val dyn_Z3_eval = _import * : DynLink.fptr -> (z3_context * z3_model * z3_ast * MLton.Pointer.t) -> int;
+    val dyn_Z3_eval = _import * : DynLink.fptr -> (z3_context *
+            z3_model * z3_ast * z3_ast ref) -> int;
     val Z3_eval_ptr = DynLink.dlsym(hndl, "Z3_eval")
   in
     dyn_Z3_eval Z3_eval_ptr (c,m,t,v)

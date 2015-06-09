@@ -125,17 +125,18 @@ structure VSC = VSCondition (open SpecLang
                              structure TyCst = TyCst)
 structure VC = VSC.VerificationCondition
 structure SC = VSC.SynthesisCondition
-structure SpecVerify = SpecVerify (structure VE = VE
-                                   structure RE = RE
-                                   structure ANormalCoreML = ANormalCoreML
-                                   structure VSC = VSC)
-
 
 val (z3_log,z3_log_close) = (fn stream => 
   (fn str => (Out.output (stream,str);
       Out.flush stream), 
    fn () => Out.close stream)) 
    (Out.openOut "catalyst.z3")
+
+structure SpecVerify = SpecVerify (structure VE = VE
+                                   structure RE = RE
+                                   structure ANormalCoreML = ANormalCoreML
+                                   structure VSC = VSC
+                                   val z3_log = z3_log)
 
 (*
 structure VCE = VCEncode (structure VC = VC

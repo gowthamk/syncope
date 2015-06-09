@@ -22,8 +22,10 @@ struct
                                                structure ANormalCoreML
                                                    = ANormalCoreML
                                                structure TyCst = TyCst)
-  structure TyConstraintSolve = TyConstraintSolve (structure VE = VE
-                                                   structure TyCst = TyCst)
+  structure VSCE = VSCEncode (structure VSC = VSC
+                              val z3_log = z3_log)
+  structure VCE = VSCE.VCEncode
+  structure SCE = VSCE.SCEncode
 
   type subst = Var.t*Var.t
   type substs = subst Vector.t
@@ -613,8 +615,9 @@ struct
         val _ = print "Elaborated Synthesis Condition:\n"
         val _ = Control.message (Control.Top, fn _ =>
           SC.layout sc)
-        val csc = TyConstraintSolve.newContext ve
-        val csolve = #solve csc
+        val sctx = SCE.newContext sc
+        val _ = SCE.solve sctx
+        val _ = SCE.delContext sctx
       in
         raise (Fail "Unimpl.")
       end
